@@ -96,8 +96,8 @@ def run_experiment(config: DiscriminatorGroupConfig):
     # Map early stop threshold directly based on env_group
     threshold_map = {
         "all": 50.0,
-        "SafetyGym": 50.0,
-        "BulletGym": 50.0,
+        "SafetyGym": 60.0,
+        "BulletGym": 60.0,
         "MetaDrive": 50.0
     }
     config.early_stop_threshold = threshold_map.get(config.env_group, config.early_stop_threshold)
@@ -109,7 +109,7 @@ def run_experiment(config: DiscriminatorGroupConfig):
         seed_list=[config.seed],
         run_func=run_for_config,
         name_prefix=f"disc-{config.tag}",
-        early_stop_metric="f1",
+        early_stop_metric="precision",
         early_stop_threshold=config.early_stop_threshold
     )
 

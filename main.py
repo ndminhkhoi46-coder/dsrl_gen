@@ -290,7 +290,7 @@ class JAXDiscriminatorTrainer:
             }
             wandb.log({**log_odd_metrics, **classification_metrics})
         print(f"Training Completed | Dataset F1 (MCR): {f1}%")
-        info_dict = {"f1": float(f1), "expert_proportion": float(self.expert_proportion)}
+        info_dict = {"f1": float(f1), "precision": float(precision), "expert_proportion": float(self.expert_proportion)}
         return self.state, info_dict
     
     def get_few_log_odds_batch(self, input_data, batch_size=8192):
