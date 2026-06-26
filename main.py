@@ -195,18 +195,6 @@ class JAXDiscriminatorTrainer:
 
         return prec, rec, f1
 
-    def calculate_trajectories_modes(self, preds, data_dict):
-        dones = jnp.asarray(np.logical_or(data_dict['terminals'], data_dict['timeouts']))
-        indices = jnp.cumsum(dones).astype(jnp.int32) - dones.astype(jnp.int32)
-        num_trajs = indices[-1] + 1
-        # Calculate trajectories prediction counts and length
-        trajs_preds = jax.ops.segment_sum(preds, indices, num_segments=num_trajs)
-        trajs_lens = jax.ops.segment_sum(jnp.ones_like(preds), indices, num_segments=num_trajs)
-        # Calculate mode and broadcast back to state-level in one go
-        traj_modes = (trajs_preds / trajs_lens > 0.5).astype(jnp.int32)
-        traj_modes = traj_modes[indices] # trajectory-level mode to state-level mode
-        return traj_modes
-
     def evaluate_discriminator(self, data_tuple, data_dict_tuple):
         few_data, mixture_data = data_tuple
         few_data_dict, mixture_data_dict = data_dict_tuple
@@ -219,10 +207,9 @@ class JAXDiscriminatorTrainer:
         self.threshold = utils.get_discriminator_threshold(mixture_log_odds, 1 - self.expert_proportion)
         exp_preds = utils.threshold_log_odds(exp_log_odds, self.threshold)
         mixture_preds = utils.threshold_log_odds(mixture_log_odds, self.threshold)
-        mixture_traj_mode = self.calculate_trajectories_modes(mixture_preds, mixture_data_dict)
-        self.evaluate_preds(self._cached_is_expert_label, jnp.concatenate([np.ones_like(exp_preds),mixture_traj_mode]), name='Expert-Mode Evaluation', verbose = True) 
-        
-        return mixture_traj_mode
+        self.evaluate_preds(self._cached_is_expert_label, jnp.concatenate([np.ones_like(exp_preds), mixture_preds]), name='Evaluation', verbose=True)
+
+        return mixture_preds
 
     def train_one_iteration(self, few_data, mixture_data, pred_mode, batch_size):
         # Batch preparation
@@ -282,10 +269,7 @@ class JAXDiscriminatorTrainer:
         mixture_preds = utils.threshold_log_odds(mixture_log_odds, self.threshold)
         pred = np.concatenate([exp_preds, mixture_preds])
 
-        self.evaluate_preds(label, pred, 'Mixed Dataset (Final iteration, State-based)', verbose=True)
-
-        mixture_traj_mode = self.calculate_trajectories_modes(mixture_preds, mixture_data_dict)
-        precision, recall, f1 = self.evaluate_preds(label, jnp.concatenate([few_trajs_label, mixture_traj_mode]), 'Mixed Dataset (Final iteration, MCR)', verbose=False) # Set few-few labels as 1 (we have labels)
+        precision, recall, f1 = self.evaluate_preds(label, pred, 'Mixed Dataset (Final iteration)', verbose=True)
 
         optimal_quantile = utils.format_classification_metrics(1 - np.mean(mixture_data_dict['is_expert']))
         mixture_non_expert_prediction_proportions = utils.format_classification_metrics(1 - mixture_preds.mean())
@@ -335,9 +319,8 @@ def create_discriminator(pca_tuple, optim_tuple, rng_key, use_wandb, quantile):
     )
 
 def report_metrics(jax_discriminator, few_input, mixture_input, transform_tuple, few_data, mixture_data, additional_data, info_dict):
-    # Print F1 for combined dataset
-    print(f"Combined Dataset F1 (MCR): {info_dict['f1']}%")
-    
+    print(f"Combined Dataset F1: {info_dict['f1']}%")
+
     few_data['log_odds'] = jax_discriminator.get_few_log_odds_batch(few_input)
     mixture_data['log_odds'] = jax_discriminator.get_few_log_odds_batch(mixture_input)
 
@@ -346,16 +329,14 @@ def report_metrics(jax_discriminator, few_input, mixture_input, transform_tuple,
     safety_data['log_odds'] = jax_discriminator.get_few_log_odds_batch(safety_input)
     safety_preds = utils.threshold_log_odds(safety_data['log_odds'], jax_discriminator.threshold)
 
-    safety_traj_mode = jax_discriminator.calculate_trajectories_modes(safety_preds, safety_data)
-    prec_mcr, rec_mcr, f1_mcr = jax_discriminator.evaluate_preds(safety_data['is_expert'], safety_traj_mode, 'Safety Dataset (MCR)', verbose = True)
+    prec, rec, f1 = jax_discriminator.evaluate_preds(safety_data['is_expert'], safety_preds, 'Safety Dataset', verbose=True)
 
     if jax_discriminator.use_wandb:
-        classification_metrics = {
-            f"final_iteration/additional_safety_f1": f1_mcr,
-            f"final_iteration/additional_safety_recall": rec_mcr,
-            f"final_iteration/additional_safety_precision": prec_mcr,
-        }
-        wandb.log(classification_metrics)
+        wandb.log({
+            "final_iteration/additional_safety_f1": f1,
+            "final_iteration/additional_safety_recall": rec,
+            "final_iteration/additional_safety_precision": prec,
+        })
 
     utils.adversarial_validation(mixture_input, safety_input, label_name="Mixture vs. Safe")
     utils.adversarial_validation(mixture_input[mixture_data['is_expert']==0], safety_input[safety_data['is_expert']==0], label_name="Mixture-Suboptimal vs. Safe-Suboptimal")
