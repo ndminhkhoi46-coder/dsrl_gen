@@ -23,7 +23,7 @@ OUTPUT_FILE = f"dsrl_group_tuning_{datetime.now().strftime('%d-%m-%H-%M-%S')}.tx
 BASE_CONFIG = {
     "method": "bayes",
     "run_cap": 300, # https://datascience.stackexchange.com/questions/87905/is-there-a-rule-of-thumb-for-a-sufficient-number-of-trials-for-hyperparameter-se
-    "metric": {"goal": "maximize", "name": "f1"},
+    "metric": {"goal": "maximize", "name": "precision"},
     "early_terminate": {
         "type": "hyperband",
         "min_iter": 3,
