@@ -229,7 +229,8 @@ def generate_offline_suboptimal_dataset(config, threshold_tuple, base_path):
             selected_trajs = list(rng.choice(parent_trajs, target_num, replace=False))
             sampled_dataset, _ = trajs_indices_to_dataset(selected_trajs, parent_dataset, mode='trajs')
             if not config['disable_model_and_data_saving']: save_h5(save_path, sampled_dataset)
-            return sampled_dataset, list(selected_trajs)
+            sampled_trajs = _parse_trajectories(sampled_dataset)
+            return sampled_dataset, sampled_trajs
 
     def get_full_dataset():
         full_dataset = load_dataset_from_hub(config)
